@@ -1,0 +1,39 @@
+ Bước 1: Cấu hình VM1 (DNS Forwarder & Routing)Tiền đề: Dịch vụ OpenVPN Server đã được cấu hình hoạt động, VM1 đã có giao diện tun0 với IP 10.8.0.1.1. Cài đặt DnsmasqCài đặt dnsmasq để làm nhiệm vụ tiếp nhận và chuyển tiếp các truy vấn DNS:bashsudo apt update
+sudo apt install dnsmasq iptables-persistent -y
+Hãy thận trọng khi sử dụng mã.2. Cấu hình Định tuyến & Tường lửa (Routing)Bật tính năng chuyển tiếp gói tin (IP Forwarding) trong nhân Linux để cho phép dữ liệu từ mạng Client đi xuyên sang mạng VPN:bashsudo sysctl -w net.ipv4.ip_forward=1
+echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
+
+# Cho phép chuyển tiếp dữ liệu giữa card mạng LAN (ens160) và card VPN (tun0)
+sudo iptables -A FORWARD -i ens160 -o tun0 -j ACCEPT
+sudo iptables -A FORWARD -i tun0 -o ens160 -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# Lưu lại luật iptables để không bị mất khi reboot
+sudo iptables-save | sudo tee /etc/iptables/rules.v4
+Hãy thận trọng khi sử dụng mã.3. Cấu hình Dnsmasq làm ForwarderTạo một file cấu hình sạch tại /etc/dnsmasq.conf:bashsudo tee /etc/dnsmasq.conf << 'EOF'
+# Lắng nghe truy vấn từ mạng LAN Client gửi tới VM1
+interface=ens160
+listen-address=172.17.16.102
+
+# Ngắt hoàn toàn kết nối ra Internet bên ngoài để đảm bảo cô lập
+no-resolv
+no-hosts
+
+# Chuyển tiếp (Forward) TẤT CẢ truy vấn DNS sang VM2 (C2 Teamserver) thông qua IP VPN
+server=10.8.0.2
+EOF
+Hãy thận trọng khi sử dụng mã.4. Khởi động dịch vụbashsudo systemctl restart dnsmasq
+sudo systemctl enable dnsmasq
+Hãy thận trọng khi sử dụng mã.🛠️ Bước 2: Cấu hình VM2 (C2 Teamserver)Tiền đề: OpenVPN Client đã kết nối thành công tới VM1, giao diện tun0 đã nhận đúng IP 10.8.0.2.1. Giải phóng Port 53 (Tắt systemd-resolved)Mặc định trên hệ điều hành Ubuntu/Debian, dịch vụ systemd-resolved sẽ chiếm sẵn cổng 53, khiến Teamserver không thể bind cổng này. Thực hiện các lệnh sau để giải phóng:bash# Dừng và vô hiệu hóa dịch vụ chiếm cổng 53
+sudo systemctl stop systemd-resolved
+sudo systemctl disable systemd-resolved
+
+# Xóa file liên kết cũ và tạo file cấu hình DNS thủ công nội bộ cho máy
+sudo rm /etc/resolv.conf
+echo "nameserver 10.8.0.1" | sudo tee /etc/resolv.conf
+Hãy thận trọng khi sử dụng mã.(Lưu ý: Không cài đặt hoặc hãy tắt hoàn toàn dịch vụ BIND9 nếu có trên máy bằng lệnh sudo systemctl stop named).2. Thiết lập DNS Listener trên C2 FrameworkKhởi chạy bảng điều khiển C2 của bạn (Cobalt Strike, Sliver, Havoc...) và tạo một DNS Listener với các thông số cấu hình chuẩn sau:Tùy chọn (Options)Giá trị cấu hình (Value)Ghi chúPayload / Listener TypeBeacon DNS / dnsChọn giao thức DNSBind Address / Host10.8.0.2 (hoặc 0.0.0.0)Lắng nghe trực tiếp trên giao diện VPN (tun0)Port53Bắt buộc phải là cổng 53 (UDP)DNS Hosts / Domainslab.localRoot Domain quản lý của C2DNS Hostnamesns1.lab.localName Server xử lý Zone dữ liệu🛠️ Bước 3: Cấu hình Client (Windows 11)Thiết lập thủ công để máy Windows 11 chỉ gửi truy vấn DNS về duy nhất Gateway mạng VM1.1. Cấu hình DNS Server qua PowerShell (Chạy quyền Administrator)Mở PowerShell (Admin) trên máy Windows 11 và thực thi các lệnh sau:powershell# Xem tên Card mạng đang kết nối (InterfaceAlias)
+Get-NetIPAddress -AddressFamily IPv4 | Format-Table InterfaceAlias, IPAddress
+
+# Trỏ DNS Server duy nhất về IP LAN của VM1 (Thay "Ethernet" bằng tên card mạng của bạn nếu khác)
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ("172.17.16.102")
+Hãy thận trọng khi sử dụng mã.2. Kiểm tra lại cấu hình trên ClientXác nhận Windows 11 đã nhận chính xác DNS Gateway và không dính DNS dự phòng khác:cmdipconfig /all
+Hãy thận trọng khi sử dụng mã.(Kiểm tra tại dòng DNS Servers phải hiển thị duy nhất IP 172.17.16.102).🧪 Kịch bản kiểm tra môi trường (Verification)Đứng từ máy Client (Windows 11), mở Command Prompt và thực hiện một truy vấn DNS thuộc domain giả lập để kiểm tra luồng đi của dữ liệu:cmdnslookup test-beacon-signal.lab.local
