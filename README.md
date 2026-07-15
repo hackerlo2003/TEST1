@@ -1,10 +1,13 @@
 1. Cấu hình VM1 (VPN Gateway & DNS Forwarder)VM1 đóng vai trò là "cửa ngõ" nhận truy vấn DNS từ Client, chuyển tiếp nó qua đường truyền VPN an toàn đến DNS Server (VM2).Cấu hình OpenVPN ServerTạo file cấu hình server tại /etc/openvpn/server.conf:textdev tun
 
 Hãy thận trọng khi sử dụng mã.Định tuyến và Firewall (iptables)Để VM1 nhận diện và xử lý lưu lượng, bạn cần bật IP Forwarding và cấu hình luật tường lửa:bash# Bật IP Forwarding
+
 sysctl -w net.ipv4.ip_forward=1
 
 # Cho phép chuyển tiếp dữ liệu giữa ens160 và tun0
 iptables -A FORWARD -i ens160 -o tun0 -j ACCEPT
+
+
 iptables -A FORWARD -i tun0 -o ens160 -m state --state RELATED,ESTABLISHED -j ACCEPT
 Hãy thận trọng khi sử dụng mã.Cấu hình DNS Forwarder (Sử dụng Dnsmasq)Cài đặt dnsmasq và cấu hình tại /etc/dnsmasq.conf:text# Lắng nghe truy vấn từ mạng client
 interface=ens160
