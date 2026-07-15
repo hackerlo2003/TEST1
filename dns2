@@ -1,39 +1,77 @@
- Bước 1: Cấu hình VM1 (DNS Forwarder & Routing)Tiền đề: Dịch vụ OpenVPN Server đã được cấu hình hoạt động, VM1 đã có giao diện tun0 với IP 10.8.0.1.1. Cài đặt DnsmasqCài đặt dnsmasq để làm nhiệm vụ tiếp nhận và chuyển tiếp các truy vấn DNS:bashsudo apt update
+2. Cấu hình chi tiết VM1 (VPN Gateway & DNS Forwarder)Bước 2.1: Cài đặt dịch vụbashsudo apt update
 sudo apt install dnsmasq iptables-persistent -y
-Hãy thận trọng khi sử dụng mã.2. Cấu hình Định tuyến & Tường lửa (Routing)Bật tính năng chuyển tiếp gói tin (IP Forwarding) trong nhân Linux để cho phép dữ liệu từ mạng Client đi xuyên sang mạng VPN:bashsudo sysctl -w net.ipv4.ip_forward=1
+Hãy thận trọng khi sử dụng mã.Bước 2.2: Kích hoạt IP Forwarding & Firewall RoutingBật chuyển tiếp gói tin để dữ liệu dải LAN kết nối được sang mạng VPN:bashsudo sysctl -w net.ipv4.ip_forward=1
 echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
 
-# Cho phép chuyển tiếp dữ liệu giữa card mạng LAN (ens160) và card VPN (tun0)
 sudo iptables -A FORWARD -i ens160 -o tun0 -j ACCEPT
 sudo iptables -A FORWARD -i tun0 -o ens160 -m state --state RELATED,ESTABLISHED -j ACCEPT
-
-# Lưu lại luật iptables để không bị mất khi reboot
 sudo iptables-save | sudo tee /etc/iptables/rules.v4
-Hãy thận trọng khi sử dụng mã.3. Cấu hình Dnsmasq làm ForwarderTạo một file cấu hình sạch tại /etc/dnsmasq.conf:bashsudo tee /etc/dnsmasq.conf << 'EOF'
-# Lắng nghe truy vấn từ mạng LAN Client gửi tới VM1
-interface=ens160
+Hãy thận trọng khi sử dụng mã.Bước 2.3: Cấu hình chi tiết file /etc/dnsmasq.confXóa cấu hình cũ và tạo mới file để dnsmasq đẩy truy vấn về cho cụm dịch vụ phân giải trên VM2:bashsudo mv /etc/dnsmasq.conf /etc/dnsmasq.conf.bak
+sudo nano /etc/dnsmasq.conf
+Hãy thận trọng khi sử dụng mã.Ghi nội dung sau (Đẩy traffic sang IP VPN 10.8.0.2 - nơi BIND9 hoặc C2 sẽ tiếp nhận tương ứng):textinterface=ens160
 listen-address=172.17.16.102
 
-# Ngắt hoàn toàn kết nối ra Internet bên ngoài để đảm bảo cô lập
+# Cô lập Lab khỏi Internet
 no-resolv
 no-hosts
 
-# Chuyển tiếp (Forward) TẤT CẢ truy vấn DNS sang VM2 (C2 Teamserver) thông qua IP VPN
-server=10.8.0.2
-EOF
-Hãy thận trọng khi sử dụng mã.4. Khởi động dịch vụbashsudo systemctl restart dnsmasq
+# Chuyển tiếp toàn bộ truy vấn domain lab.local sang VM2 qua VPN
+server=/lab.local/10.8.0.2
+Hãy thận trọng khi sử dụng mã.Khởi động lại dịch vụ:bashsudo systemctl restart dnsmasq
 sudo systemctl enable dnsmasq
-Hãy thận trọng khi sử dụng mã.🛠️ Bước 2: Cấu hình VM2 (C2 Teamserver)Tiền đề: OpenVPN Client đã kết nối thành công tới VM1, giao diện tun0 đã nhận đúng IP 10.8.0.2.1. Giải phóng Port 53 (Tắt systemd-resolved)Mặc định trên hệ điều hành Ubuntu/Debian, dịch vụ systemd-resolved sẽ chiếm sẵn cổng 53, khiến Teamserver không thể bind cổng này. Thực hiện các lệnh sau để giải phóng:bash# Dừng và vô hiệu hóa dịch vụ chiếm cổng 53
-sudo systemctl stop systemd-resolved
+Hãy thận trọng khi sử dụng mã.🛠️ 3. Cấu hình chi tiết VM2 (BIND9 & C2 Teamserver)Bước 3.1: Cài đặt BIND9bashsudo apt update
+sudo apt install bind9 bind9utils -y
+Hãy thận trọng khi sử dụng mã.Bước 3.2: Giải phóng Port 53 trên các Interface mạngTắt dịch vụ DNS mặc định systemd-resolved để không gây xung đột cổng:bashsudo systemctl stop systemd-resolved
 sudo systemctl disable systemd-resolved
-
-# Xóa file liên kết cũ và tạo file cấu hình DNS thủ công nội bộ cho máy
 sudo rm /etc/resolv.conf
-echo "nameserver 10.8.0.1" | sudo tee /etc/resolv.conf
-Hãy thận trọng khi sử dụng mã.(Lưu ý: Không cài đặt hoặc hãy tắt hoàn toàn dịch vụ BIND9 nếu có trên máy bằng lệnh sudo systemctl stop named).2. Thiết lập DNS Listener trên C2 FrameworkKhởi chạy bảng điều khiển C2 của bạn (Cobalt Strike, Sliver, Havoc...) và tạo một DNS Listener với các thông số cấu hình chuẩn sau:Tùy chọn (Options)Giá trị cấu hình (Value)Ghi chúPayload / Listener TypeBeacon DNS / dnsChọn giao thức DNSBind Address / Host10.8.0.2 (hoặc 0.0.0.0)Lắng nghe trực tiếp trên giao diện VPN (tun0)Port53Bắt buộc phải là cổng 53 (UDP)DNS Hosts / Domainslab.localRoot Domain quản lý của C2DNS Hostnamesns1.lab.localName Server xử lý Zone dữ liệu🛠️ Bước 3: Cấu hình Client (Windows 11)Thiết lập thủ công để máy Windows 11 chỉ gửi truy vấn DNS về duy nhất Gateway mạng VM1.1. Cấu hình DNS Server qua PowerShell (Chạy quyền Administrator)Mở PowerShell (Admin) trên máy Windows 11 và thực thi các lệnh sau:powershell# Xem tên Card mạng đang kết nối (InterfaceAlias)
-Get-NetIPAddress -AddressFamily IPv4 | Format-Table InterfaceAlias, IPAddress
 
-# Trỏ DNS Server duy nhất về IP LAN của VM1 (Thay "Ethernet" bằng tên card mạng của bạn nếu khác)
-Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ("172.17.16.102")
-Hãy thận trọng khi sử dụng mã.2. Kiểm tra lại cấu hình trên ClientXác nhận Windows 11 đã nhận chính xác DNS Gateway và không dính DNS dự phòng khác:cmdipconfig /all
-Hãy thận trọng khi sử dụng mã.(Kiểm tra tại dòng DNS Servers phải hiển thị duy nhất IP 172.17.16.102).🧪 Kịch bản kiểm tra môi trường (Verification)Đứng từ máy Client (Windows 11), mở Command Prompt và thực hiện một truy vấn DNS thuộc domain giả lập để kiểm tra luồng đi của dữ liệu:cmdnslookup test-beacon-signal.lab.local
+# Cấu hình hệ thống VM2 trỏ DNS về Localhost
+echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf
+Hãy thận trọng khi sử dụng mã.Bước 3.3: Cấu hình file Option của BIND9 (/etc/bind/named.conf.options)Cấu hình để BIND9 chỉ chiếm cổng 53 trên giao diện 127.0.0.1, chừa hoàn toàn cổng 53 trên giao diện 10.8.0.2 cho C2 Teamserver.bashsudo nano /etc/bind/named.conf.options
+Hãy thận trọng khi sử dụng mã.Ghi nội dung cấu hình chi tiết:textoptions {
+        directory "/var/cache/bind";
+
+        # CHỈ lắng nghe trên cổng 53 của Localhost (127.0.0.1)
+        listen-on port 53 { 127.0.0.1; };
+        listen-on-v6 { none; };
+
+        # Cho phép truy vấn nội bộ
+        allow-query { localhost; 10.8.0.0/24; };
+
+        # Tắt tính năng đệ quy ra Internet
+        recursion no;
+};
+Hãy thận trọng khi sử dụng mã.Bước 3.4: Cấu hình Khai báo Zone tại /etc/bind/named.conf.localKhai báo phân vùng tên miền lab.local:bashsudo nano /etc/bind/named.conf.local
+Hãy thận trọng khi sử dụng mã.Ghi nội dung sau:textzone "lab.local" {
+    type master;
+    file "/etc/bind/db.lab.local";
+};
+Hãy thận trọng khi sử dụng mã.Bước 3.5: Cấu hình chi tiết File Cơ sở dữ liệu Zone (/etc/bind/db.lab.local)Tạo file zone chuẩn để định nghĩa cấu trúc tên miền. Điểm mấu chốt ở đây là cấu hình một vùng subdomain chuyên biệt dành cho Beacon (ví dụ: bc.lab.local) và thực hiện Zone Forwarding từ BIND9 (127.0.0.1) đẩy thẳng sang C2 Teamserver (10.8.0.2) trên cùng cổng 53.bashsudo nano /etc/bind/db.lab.local
+Hãy thận trọng khi sử dụng mã.Ghi nội dung cấu hình chi tiết:text$TTL    604800
+@       IN      SOA     ns1.lab.local. root.lab.local. (
+                              4         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                         604800 )       ; Negative Cache TTL
+;
+
+; Bản ghi Name Server cho toàn bộ Zone lab.local
+@       IN      NS      ns1.lab.local.
+ns1     IN      A       10.8.0.2
+
+; Định nghĩa Subdomain 'bc.lab.local' phục vụ luồng DNS Beacon
+bc      IN      NS      c2ns.lab.local.
+c2ns    IN      A       10.8.0.2
+
+; Cấu hình BIND9 đẩy phân vùng Beacon sang C2 Teamserver đang chạy ở 10.8.0.2:53
+zone "bc.lab.local" {
+    type forward;
+    forward only;
+    forwarders { 10.8.0.2; };
+};
+Hãy thận trọng khi sử dụng mã.Kiểm tra và khởi động lại BIND9:bashnamed-checkconf
+sudo systemctl restart bind9
+sudo systemctl enable bind9
+Hãy thận trọng khi sử dụng mã.Bước 3.6: Khởi chạy DNS Listener trên C2 Framework (Port 53 @ 10.8.0.2)Bật C2 Framework của bạn lên và thiết lập các thông số chính xác để nó ăn khớp với bản ghi cấu hình của BIND9:Tham số cấu hình (Options)Giá trị thiết lập (Value)Giải thích kỹ thuậtListener TypeBeacon DNS / dnsGiao thức C2 TunnelingBind Address / Host10.8.0.2Lắng nghe cố định trên Giao diện VPN (tun0)Port53Giữ nguyên cổng tiêu chuẩn 53DNS Domainsbc.lab.localTiếp nhận chuỗi dữ liệu dạng *.bc.lab.localDNS Hostnamesc2ns.lab.localTrùng khớp bản ghi NS phụ trong BIND9
