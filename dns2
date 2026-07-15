@@ -75,3 +75,9 @@ Hãy thận trọng khi sử dụng mã.Kiểm tra và khởi động lại BIND
 sudo systemctl restart bind9
 sudo systemctl enable bind9
 Hãy thận trọng khi sử dụng mã.Bước 3.6: Khởi chạy DNS Listener trên C2 Framework (Port 53 @ 10.8.0.2)Bật C2 Framework của bạn lên và thiết lập các thông số chính xác để nó ăn khớp với bản ghi cấu hình của BIND9:Tham số cấu hình (Options)Giá trị thiết lập (Value)Giải thích kỹ thuậtListener TypeBeacon DNS / dnsGiao thức C2 TunnelingBind Address / Host10.8.0.2Lắng nghe cố định trên Giao diện VPN (tun0)Port53Giữ nguyên cổng tiêu chuẩn 53DNS Domainsbc.lab.localTiếp nhận chuỗi dữ liệu dạng *.bc.lab.localDNS Hostnamesc2ns.lab.localTrùng khớp bản ghi NS phụ trong BIND9
+
+
+
+CLIENT
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ("172.17.16.102")
+
