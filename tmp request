@@ -1,0 +1,19 @@
+POST /api/event HTTP/2
+Host: s.gofile.io
+Content-Length: 74
+Sec-Ch-Ua-Platform: "Windows"
+Accept-Language: en-US,en;q=0.9
+Sec-Ch-Ua: "Chromium";v="145", "Not:A-Brand";v="99"
+Content-Type: text/plain
+Sec-Ch-Ua-Mobile: ?0
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36
+Accept: */*
+Origin: https://gofile.io
+Sec-Fetch-Site: same-site
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: https://gofile.io/
+Accept-Encoding: gzip, deflate, br
+Priority: u=1, i
+
+{"n":"pageview","u":"https://gofile.io/d/NLq1ZL","d":"gofile.io","r":null}
